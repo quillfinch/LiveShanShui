@@ -3,7 +3,7 @@
 // The "Lines & Connections" scene decorates the real desktop icons, so it wants their
 // true positions. Reading them out of the shell's icon ListView is unreliable in
 // practice: LVM_GETITEMPOSITION returns without filling the caller's buffer on some
-// systems (verified on Windows 10 19045), while LVM_GETITEMCOUNT and
+// systems (verified on affected Windows builds), while LVM_GETITEMCOUNT and
 // LVM_GETITEMSPACING answer fine.
 //
 // Strategy, best source first:

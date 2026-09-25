@@ -107,7 +107,7 @@ const Swatch kSceneSwatches[] = {
     { 0x08061a, 0xa88fff },   // Plasma Ball
 };
 static_assert(sizeof(kSceneSwatches) / sizeof(kSceneSwatches[0]) == 30,
-              "kSceneSwatches must list every SceneId (see HANDOVER invariant 8)");
+              "kSceneSwatches must list every SceneId, in SceneId order");
 
 D2D1_RECT_F ToRect(const RECT& r) {
     return D2D1::RectF((float)r.left, (float)r.top, (float)r.right, (float)r.bottom);
