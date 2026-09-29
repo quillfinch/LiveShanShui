@@ -38,6 +38,12 @@ enum class SceneId : int {
     Kaleido,
     Flow,
     Plasma,
+    Bloom,
+    Strata,
+    Shards,
+    Halos,
+    Hive,
+    Weave,
     Count
 };
 
@@ -77,6 +83,15 @@ struct Config {
     // Scene layout variation. Incremented by `--reshuffle` (and the tray menu);
     // scenes fold it into their RNG seeds, so each value is a new deterministic look.
     unsigned variation = 0;
+
+    // One global custom color (0xRRGGBB). Scenes that report SupportsCustomColor()
+    // derive their whole palette from it when enabled; otherwise palettes come
+    // from the variation seed.
+    bool useCustomColor = false;
+    unsigned customColor = 0x4DD0E1;
+
+    // Auto-cycle: advance to the next wallpaper every N minutes. 0 = off.
+    int cycleMinutes = 0;
 
     static Config Defaults();
     static std::wstring FilePath();

@@ -45,6 +45,12 @@ const SceneInfo kScenes[] = {
     { SceneId::Kaleido, L"kaleido", L"Kaleidoscope" },
     { SceneId::Flow, L"flow", L"Flow Field" },
     { SceneId::Plasma, L"plasma", L"Plasma Ball" },
+    { SceneId::Bloom, L"bloom", L"Bloom" },
+    { SceneId::Strata, L"strata", L"Strata" },
+    { SceneId::Shards, L"shards", L"Shards" },
+    { SceneId::Halos, L"halos", L"Halos" },
+    { SceneId::Hive, L"hive", L"Hive" },
+    { SceneId::Weave, L"weave", L"Weave" },
 };
 static_assert(sizeof(kScenes) / sizeof(kScenes[0]) == (size_t)SceneId::Count,
               "kScenes must have exactly one entry per SceneId");
@@ -111,6 +117,9 @@ void Config::Normalize() {
     if (targetFps != 0) targetFps = (int)Clamp((float)targetFps, 5.0f, 240.0f);
     dim = Clamp(dim, 0.0f, 0.6f);
     variation &= 0x00FFFFFFu;   // plenty of reshuffles, and never a sign bit surprise
+    customColor &= 0x00FFFFFFu;
+    if (cycleMinutes < 0) cycleMinutes = 0;
+    if (cycleMinutes > 240) cycleMinutes = 240;
     for (float& p : sceneParam) p = Clamp(p, 0.0f, 1.0f);
 }
 
@@ -137,6 +146,9 @@ Config Config::Load() {
         else if (k == L"quality")      c.quality = (Quality)_wtoi(v.c_str());
         else if (k == L"dim")          c.dim = (float)_wtof(v.c_str());
         else if (k == L"variation")    c.variation = (unsigned)_wtol(v.c_str());
+        else if (k == L"useCustomColor") c.useCustomColor = (_wtoi(v.c_str()) != 0);
+        else if (k == L"customColor")  c.customColor = (unsigned)wcstoul(v.c_str(), nullptr, 16) & 0xFFFFFFu;
+        else if (k == L"cycleMinutes") c.cycleMinutes = _wtoi(v.c_str());
         else if (k == L"pauseFullscreen") c.pauseWhenFullscreen = (_wtoi(v.c_str()) != 0);
         else if (k == L"pauseBattery")    c.pauseOnBattery = (_wtoi(v.c_str()) != 0);
         else if (k == L"pauseLocked")     c.pauseWhenLocked = (_wtoi(v.c_str()) != 0);

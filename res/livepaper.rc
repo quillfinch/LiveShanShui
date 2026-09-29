@@ -16,8 +16,8 @@
 
 // Version information, shown in the file properties dialog.
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,3,0,0
-PRODUCTVERSION 1,3,0,0
+FILEVERSION 1,4,0,0
+PRODUCTVERSION 1,4,0,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -30,11 +30,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "LivePaper"
             VALUE "FileDescription",  "LivePaper live wallpaper engine"
-            VALUE "FileVersion",      "1.3.0.0"
+            VALUE "FileVersion",      "1.4.0.0"
             VALUE "InternalName",     "LivePaper"
             VALUE "OriginalFilename", "LivePaper.exe"
             VALUE "ProductName",      "LivePaper"
-            VALUE "ProductVersion",   "1.3.0.0"
+            VALUE "ProductVersion",   "1.4.0.0"
         END
     END
     BLOCK "VarFileInfo"

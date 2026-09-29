@@ -44,13 +44,14 @@ struct Options {
     enum class Mode { Engine, Help, Version, List, Selftest, Capture, Status,
                       SetScene, Next, Prev, Pause, Resume, Toggle, Quit, Reload,
                       Install, Uninstall, SetFps, SetQuality, Render, Diag, Screencap,
-                      Reshuffle };
+                      Reshuffle, SetCycle };
     Mode mode = Mode::Engine;
     SceneId scene = SceneId::Lines;
     int fps = -1;
     Quality quality = Quality::Balanced;
     bool verbose = false;
     bool noPanel = false;
+    int cycleMinutes = -1;
     std::wstring capturePath;
     bool badArg = false;
     std::wstring badArgText;
@@ -109,6 +110,7 @@ USAGE
   LivePaper --toggle              Toggle pause (global hotkey: Ctrl+Alt+P)
   LivePaper --fps <n|max>         Set the frame-rate cap
   LivePaper --quality <low|balanced|high>
+  LivePaper --cycle <min|off>     Auto-switch wallpaper every N minutes
   LivePaper --reload              Re-attach to the desktop after an Explorer restart
   LivePaper --quit                Stop the engine
   LivePaper --status              Report whether an engine is running
@@ -172,6 +174,12 @@ bool ParseArgs(int argc, wchar_t** argv, Options& opt) {
         else if (a == L"--next") opt.mode = Options::Mode::Next;
         else if (a == L"--prev") opt.mode = Options::Mode::Prev;
         else if (a == L"--reshuffle" || a == L"--shuffle") opt.mode = Options::Mode::Reshuffle;
+        else if (a == L"--cycle") {
+            const wchar_t* v = need(L"--cycle");
+            if (!v) return false;
+            opt.cycleMinutes = (_wcsicmp(v, L"off") == 0 || _wcsicmp(v, L"0") == 0) ? 0 : _wtoi(v);
+            opt.mode = Options::Mode::SetCycle;
+        }
         else if (a == L"--pause") opt.mode = Options::Mode::Pause;
         else if (a == L"--resume") opt.mode = Options::Mode::Resume;
         else if (a == L"--toggle") opt.mode = Options::Mode::Toggle;
@@ -298,6 +306,12 @@ COLORREF SceneAccent(SceneId id) {
         case SceneId::Kaleido: return RGB(0xff, 0x9d, 0xe2);
         case SceneId::Flow: return RGB(0x4d, 0xe8, 0xb0);
         case SceneId::Plasma: return RGB(0xa8, 0x8f, 0xff);
+        case SceneId::Bloom: return RGB(0xff, 0x8a, 0xd4);
+        case SceneId::Strata: return RGB(0x5a, 0xc8, 0xff);
+        case SceneId::Shards: return RGB(0x8f, 0x7b, 0xff);
+        case SceneId::Halos: return RGB(0x7d, 0xe0, 0xff);
+        case SceneId::Hive: return RGB(0xa8, 0xe0, 0x5f);
+        case SceneId::Weave: return RGB(0xd0, 0x8a, 0x5f);
         default:                 return RGB(0x4d, 0xd0, 0xe1);
     }
 }
@@ -358,6 +372,8 @@ private:
     std::unique_ptr<Scene> m_scene;
     SceneId m_sceneId = SceneId::Lines;
     Config m_config;
+    unsigned m_appliedVariation = 0;   // variation the live scene was built with
+    float m_cycleSeconds = 0;          // auto-cycle accumulator
     bool m_paused = false;
     bool m_userPaused = false;
     bool m_suspended = false;
@@ -544,6 +560,7 @@ bool Engine::Startup(const Options& opt) {
             SetAutostart(m_config.startWithWindows);
         ApplyConfig(true);
     };
+    cb.onShuffle = [this] { Reshuffle(); };
     cb.onClose = [] {};
     if (!m_panel->Create(inst, cb)) {
         LP_LOGW(L"engine: control panel unavailable");
@@ -637,12 +654,23 @@ SceneCtx Engine::BaseCtx() {
     ctx.config = &m_config;
     ctx.density = QualityDensity(m_config.quality);
     ctx.variation = m_config.variation;
+    ctx.useCustomColor = m_config.useCustomColor;
+    ctx.customColor = Color::Hex(m_config.customColor);
     return ctx;
 }
 
 void Engine::ApplyConfig(bool save) {
     m_config.Normalize();
     if (save) m_config.Save();
+
+    // A bumped variation (reshuffle) re-rolls the current scene in place.
+    if (m_config.variation != m_appliedVariation) {
+        m_appliedVariation = m_config.variation;
+        m_scene.reset(CreateScene(m_sceneId));
+        m_sceneTime = 0;
+        if (m_scene && m_device.Dc()) m_scene->Configure(BaseCtx());
+        if (m_panel) m_panel->SetState(m_config, m_paused, L"", L"");
+    }
 
     float want = QualitySceneScale(m_config.quality) * m_adaptiveScale;
     if (std::abs(want - m_device.SceneScale()) > 0.01f) {
@@ -669,6 +697,7 @@ void Engine::SwitchScene(SceneId id) {
     m_scene.reset(CreateScene(id));
     m_sceneTime = 0;
 
+    m_appliedVariation = m_config.variation;
     if (m_scene && m_device.Dc()) m_scene->Configure(BaseCtx());
     if (m_panel) {
         // The panel shows the scene's own parameter names; copy them out before
@@ -677,7 +706,7 @@ void Engine::SwitchScene(SceneId id) {
             const wchar_t* names[4] = {};
             int n = std::min(m_scene->ParamCount(), 4);
             for (int i = 0; i < n; ++i) names[i] = m_scene->ParamName(i);
-            m_panel->SetSceneParams(names, n);
+            m_panel->SetSceneParams(names, n, m_scene->SupportsCustomColor());
         }
         m_panel->SetState(m_config, m_paused, L"", L"");
     }
@@ -770,6 +799,17 @@ void Engine::TickFrame() {
     }
     m_lastFrameTime = (float)((double)(now.QuadPart) / freq.QuadPart);
     m_sceneTime += dt;
+
+    // Auto-cycle: we only get here while actually drawing, so the timer pauses
+    // with everything else.
+    if (m_config.cycleMinutes > 0) {
+        m_cycleSeconds += dt;
+        if (m_cycleSeconds >= m_config.cycleMinutes * 60.0f) {
+            m_cycleSeconds = 0;
+            NextScene(1);
+            return;   // the scene was just rebuilt; draw it on the next tick
+        }
+    }
 
     SceneCtx ctx = BaseCtx();
     ctx.dt = dt;
@@ -1557,7 +1597,7 @@ int App::Run(const wchar_t* cmdLine) {
             result = 0;
             break;
         case Options::Mode::Version:
-            Print(L"LivePaper 1.3.0 (native Direct2D engine)");
+            Print(L"LivePaper 1.4.0 (native Direct2D engine)");
             result = 0;
             break;
         case Options::Mode::List: {
@@ -1627,6 +1667,19 @@ int App::Run(const wchar_t* cmdLine) {
             Print(off ? L"LivePaper will no longer start with Windows."
                       : L"Could not remove the startup entry.");
             result = off ? 0 : 1;
+            break;
+        }
+        case Options::Mode::SetCycle: {
+            Config c = Config::Load();
+            c.cycleMinutes = std::max(0, std::min(opt.cycleMinutes, 240));
+            c.Normalize();
+            c.Save();
+            if (c.cycleMinutes > 0)
+                Print(L"Auto-cycle set to %d minutes.", c.cycleMinutes);
+            else
+                Print(L"Auto-cycle disabled.");
+            if (ipc::FindEngine()) ipc::Send(ipc::Command::ApplyConfig);
+            result = 0;
             break;
         }
         case Options::Mode::SetFps:

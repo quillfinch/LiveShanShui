@@ -34,5 +34,11 @@ Scene* CreateBlackHole();
 Scene* CreateKaleido();
 Scene* CreateFlow();
 Scene* CreatePlasma();
+Scene* CreateBloom();
+Scene* CreateStrata();
+Scene* CreateShards();
+Scene* CreateHalos();
+Scene* CreateHive();
+Scene* CreateWeave();
 
 } // namespace lp::scenes

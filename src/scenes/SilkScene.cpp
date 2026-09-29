@@ -33,6 +33,7 @@ public:
     const wchar_t* Description() const override {
         return L"Translucent silk ribbons undulating through soft light.";
     }
+    bool SupportsCustomColor() const override { return true; }
     int ParamCount() const override { return 4; }
     const wchar_t* ParamName(int i) const override {
         switch (i) {
@@ -63,7 +64,7 @@ public:
         ID2D1SolidColorBrush* brush = ctx.white;
         const float w = ctx.width, h = ctx.height;
 
-        float baseHue = Fract(0.52f + (m_hue - 0.5f) * 0.8f + m_time * 0.004f);
+        float baseHue = Fract(PaletteHue(ctx, 0.52f + (m_hue - 0.5f) * 0.8f) + m_time * 0.004f);
 
         // Backdrop: near-black tinted toward the current hue.
         D2D1_GRADIENT_STOP bg[2];

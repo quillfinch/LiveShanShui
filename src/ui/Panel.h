@@ -24,6 +24,7 @@ public:
     struct Callbacks {
         std::function<void(SceneId)> onScene;
         std::function<void(const Config&)> onConfig;
+        std::function<void()> onShuffle;   // re-roll the variation seed
         std::function<void()> onClose;
     };
 
@@ -43,9 +44,10 @@ public:
     void SetState(const Config& cfg, bool paused, const std::wstring& statusLine,
                   const std::wstring& adapterLine);
 
-    // Labels for the active scene's parameter sliders (ParamName(i), 0..3).
+    // Labels for the active scene's parameter sliders (ParamName(i), 0..3) plus
+    // whether the scene honors the global custom color (drives the COLOR section).
     // Stored by copy: the scene that produced them may be destroyed at any time.
-    void SetSceneParams(const wchar_t* const* names, int count);
+    void SetSceneParams(const wchar_t* const* names, int count, bool colorSupported);
 
     HWND Window() const;
 
@@ -56,7 +58,10 @@ public:
     void Render();
 
 private:
-    enum class Element { None, SceneButton, Slider, Toggle, Close, FpsSegment, QualitySegment };
+    enum class Element {
+        None, SceneButton, Slider, Toggle, Close, FpsSegment, QualitySegment,
+        ColorToggle, ColorSlider, ColorPreset, ColorRandom, ShuffleButton, CycleSegment
+    };
 
     struct Hit {
         Element kind = Element::None;

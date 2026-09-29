@@ -30,6 +30,7 @@ public:
     const wchar_t* Description() const override {
         return L"Slowly folding colour fields in an additive gradient mesh.";
     }
+    bool SupportsCustomColor() const override { return true; }
     int ParamCount() const override { return 4; }
     const wchar_t* ParamName(int i) const override {
         switch (i) {
@@ -69,12 +70,13 @@ public:
 
         // Blobs additively blended so overlaps bloom instead of occluding.
         dc->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_ADD);
+        float baseH = PaletteHue(ctx, m_hue);
         for (const auto& b : m_blobs) {
             float cx = b.cx * w + std::sin(m_time * b.fx + b.phase) * b.ax * w;
             float cy = b.cy * h + std::cos(m_time * b.fy + b.phase * 1.3f) * b.ay * h;
             float rx = b.rx * w;
             float ry = b.ry * h;
-            Color c = Color::Hsv(Fract(b.hue + m_hue), b.sat, 1.0f, 0.16f + 0.20f * m_glow);
+            Color c = Color::Hsv(Fract(baseH + b.hue - 0.47f), b.sat, 1.0f, 0.16f + 0.20f * m_glow);
 
             // An ellipse is approximated by drawing a few concentric filled ellipses at
             // falling alpha, which D2D renders cheaply and which smooths the falloff

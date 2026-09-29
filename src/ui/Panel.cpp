@@ -72,6 +72,25 @@ const wchar_t* kQualityLabels[] = { L"Low", L"Balanced", L"High" };
 const int kQualityValues[] = { 0, 1, 2 };
 constexpr int kQualityCount = 3;
 
+const wchar_t* kCycleLabels[] = { L"Off", L"15m", L"30m", L"60m" };
+const int kCycleValues[] = { 0, 15, 30, 60 };
+constexpr int kCycleCount = 4;
+constexpr int kPresetCount = 10;
+
+// Curated custom-color presets (0xRRGGBB).
+const unsigned kColorPresets[kPresetCount] = {
+    0x4DD0E1,  // cyan
+    0x5AB8FF,  // sky
+    0x7C5CFF,  // violet
+    0xE879F9,  // orchid
+    0xFF6F91,  // rose
+    0xFF5C5C,  // coral red
+    0xFFB347,  // amber
+    0xF4E04D,  // citron
+    0x7CE855,  // leaf
+    0x2FD8A8,  // mint
+};
+
 struct Swatch { uint32_t a, b; };
 // One accent pair per scene, indexed by SceneId.
 const Swatch kSceneSwatches[] = {
@@ -105,8 +124,14 @@ const Swatch kSceneSwatches[] = {
     { 0x0a0618, 0xff9de2 },   // Kaleidoscope
     { 0x04120e, 0x4de8b0 },   // Flow Field
     { 0x08061a, 0xa88fff },   // Plasma Ball
+    { 0x12081e, 0xff8ad4 },   // Bloom
+    { 0x0a1420, 0x5ac8ff },   // Strata
+    { 0x181028, 0x8f7bff },   // Shards
+    { 0x0a0a14, 0x7de0ff },   // Halos
+    { 0x14200a, 0xa8e05f },   // Hive
+    { 0x1a1220, 0xd08a5f },   // Weave
 };
-static_assert(sizeof(kSceneSwatches) / sizeof(kSceneSwatches[0]) == 30,
+static_assert(sizeof(kSceneSwatches) / sizeof(kSceneSwatches[0]) == 36,
               "kSceneSwatches must list every SceneId, in SceneId order");
 
 D2D1_RECT_F ToRect(const RECT& r) {
@@ -132,14 +157,20 @@ struct Panel::Impl {
 
     wchar_t paramNames[kParamSliderCount][28]{};
     int paramCount = kParamSliderCount;
+    bool colorSupported = false;
+    float colorHue = 0.52f, colorSat = 0.65f;   // derived from cfg.customColor
 
     std::vector<Hit> hits;
     RECT closeRect{};
     RECT sliderRects[kParamSliderCount]{};
     RECT fpsRects[kFpsCount]{};
     RECT qualityRects[kQualityCount]{};
-    float heading1Y = 0, heading2Y = 0, heading3Y = 0;
-    float toggleY0 = 0;
+    RECT colorToggleRect{}, colorHueRect{}, colorSatRect{};
+    RECT presetRects[kPresetCount]{}, randomRect{};
+    RECT shuffleRect{}, cycleRects[kCycleCount]{};
+    float heading1Y = 0, colorHeadingY = 0, cycleHeadingY = 0, heading2Y = 0, heading3Y = 0;
+    float seedY = 0, toggleY0 = 0;
+    Element dragging2 = Element::None;   // ColorSlider drag target
     int hoverIndex = -1;
     Element hoverKind = Element::None;
 
@@ -292,10 +323,16 @@ void Panel::SetState(const Config& cfg, bool paused, const std::wstring& statusL
     d->paused = paused;
     d->statusLine = statusLine;
     d->adapterLine = adapterLine;
+    // Keep the color sliders pinned to whatever the current custom color is.
+    float h = 0, sat = 0, v = 0;
+    Color::Hex(cfg.customColor).ToHsv(h, sat, v);
+    d->colorHue = h;
+    d->colorSat = Clamp(sat, 0.0f, 1.0f);
 }
 
-void Panel::SetSceneParams(const wchar_t* const* names, int count) {
+void Panel::SetSceneParams(const wchar_t* const* names, int count, bool colorSupported) {
     Impl* d = m_impl;
+    d->colorSupported = colorSupported;
     count = std::max(0, std::min(count, kParamSliderCount));
     for (int i = 0; i < kParamSliderCount; ++i) {
         const wchar_t* src = (i < count && names && names[i] && names[i][0]) ? names[i] : nullptr;
@@ -328,6 +365,11 @@ int Panel::Impl::NeededHeight() const {
     float y = 74.0f;
     y += (float)(((int)SceneId::Count + 2) / 3) * (kSceneBtnH + kSceneGap) + 12.0f;
     y += 26.0f + kParamSliderCount * kSliderRow + 8.0f;   // heading + 4 sliders
+    if (colorSupported) {
+        y += 26.0f + 30.0f + kSliderRow + kSliderRow + 34.0f;   // heading + toggle + hue/sat + presets
+    }
+    y += 34.0f;                                           // seed row
+    y += 26.0f + kRowH + 6.0f;                            // auto-cycle heading + row
     y += 26.0f + kRowH + kRowH + 10.0f;                   // performance heading + 2 rows
     y += 26.0f + kToggleCount * 30.0f;                    // behaviour heading + toggles
     y += kPad + 40.0f;           // footer
@@ -371,6 +413,71 @@ void Panel::RebuildLayout() {
         y += kSliderRow;
     }
     y += 8.0f;
+
+    // --- color (only for scenes that use the global custom color) -----------
+    if (d->colorSupported) {
+        d->colorHeadingY = y;
+        y += 26.0f;
+        d->colorToggleRect.left = (LONG)kPad;
+        d->colorToggleRect.top = (LONG)(y + 3);
+        d->colorToggleRect.right = (LONG)(kWidth - kPad);
+        d->colorToggleRect.bottom = (LONG)(y + 27);
+        { Hit h; h.kind = Element::ColorToggle; h.index = 0; h.rect = d->colorToggleRect; d->hits.push_back(h); }
+        y += 30.0f;
+        for (int i = 0; i < 2; ++i) {
+            RECT& r = (i == 0) ? d->colorHueRect : d->colorSatRect;
+            r.left = (LONG)(kPad + 108);
+            r.top = (LONG)(y + 7);
+            r.right = (LONG)(kWidth - kPad);
+            r.bottom = (LONG)(y + 21);
+            Hit h; h.kind = Element::ColorSlider; h.index = i; h.rect = r;
+            d->hits.push_back(h);
+            y += kSliderRow;
+        }
+        float px = kPad;
+        for (int i = 0; i < kPresetCount; ++i) {
+            d->presetRects[i].left = (LONG)px;
+            d->presetRects[i].top = (LONG)y;
+            d->presetRects[i].right = (LONG)(px + 26);
+            d->presetRects[i].bottom = (LONG)(y + 26);
+            Hit h; h.kind = Element::ColorPreset; h.index = i; h.rect = d->presetRects[i];
+            d->hits.push_back(h);
+            px += 32.0f;
+        }
+        d->randomRect.left = (LONG)(px + 4);
+        d->randomRect.top = (LONG)y;
+        d->randomRect.right = (LONG)(px + 56);
+        d->randomRect.bottom = (LONG)(y + 26);
+        { Hit h; h.kind = Element::ColorRandom; h.index = 0; h.rect = d->randomRect; d->hits.push_back(h); }
+        y += 34.0f;
+    }
+
+    // --- seed ----------------------------------------------------------------
+    d->seedY = y;
+    d->shuffleRect.left = (LONG)(kWidth - kPad - 86);
+    d->shuffleRect.top = (LONG)(y + 1);
+    d->shuffleRect.right = (LONG)(kWidth - kPad);
+    d->shuffleRect.bottom = (LONG)(y + 27);
+    { Hit h; h.kind = Element::ShuffleButton; h.index = 0; h.rect = d->shuffleRect; d->hits.push_back(h); }
+    y += 34.0f;
+
+    // --- auto-cycle ----------------------------------------------------------
+    d->cycleHeadingY = y;
+    y += 26.0f;
+    {
+        float sx = kPad + 96;
+        float avail = (kWidth - kPad) - sx;
+        float segW = avail / (float)kCycleCount;
+        for (int i = 0; i < kCycleCount; ++i) {
+            d->cycleRects[i].left = (LONG)(sx + segW * i + 1);
+            d->cycleRects[i].top = (LONG)(y + 2);
+            d->cycleRects[i].right = (LONG)(sx + segW * (i + 1) - 1);
+            d->cycleRects[i].bottom = (LONG)(y + kSegH - 2);
+            Hit h; h.kind = Element::CycleSegment; h.index = i; h.rect = d->cycleRects[i];
+            d->hits.push_back(h);
+        }
+    }
+    y += kRowH + 6.0f;
 
     // --- performance --------------------------------------------------------
     d->heading2Y = y;
@@ -511,10 +618,47 @@ void Panel::OnClick(const Hit& hit, int px) {
             break;
         }
         case Element::Slider:
-            d->dragging = Element::Slider;
+        case Element::ColorSlider:
+            d->dragging = hit.kind;
             d->dragIndex = hit.index;
             OnDrag(px);
             break;
+        case Element::ColorToggle:
+            d->cfg.useCustomColor = !d->cfg.useCustomColor;
+            if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+            break;
+        case Element::ColorPreset: {
+            int i = std::min(hit.index, kPresetCount - 1);
+            d->cfg.customColor = kColorPresets[i];
+            d->cfg.useCustomColor = true;
+            float h = 0, sat = 0, v = 0;
+            Color::Hex(d->cfg.customColor).ToHsv(h, sat, v);
+            d->colorHue = h;
+            d->colorSat = Clamp(sat, 0.0f, 1.0f);
+            if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+            break;
+        }
+        case Element::ColorRandom: {
+            Rng rng(GetTickCount() | 1u);
+            d->colorHue = rng.Unit();
+            d->colorSat = rng.Range(0.55f, 0.9f);
+            Color c = Color::Hsv(d->colorHue, d->colorSat, 0.85f);
+            d->cfg.customColor = ((unsigned)(c.r * 255.0f) << 16)
+                               | ((unsigned)(c.g * 255.0f) << 8)
+                               | (unsigned)(c.b * 255.0f);
+            d->cfg.useCustomColor = true;
+            if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+            break;
+        }
+        case Element::ShuffleButton:
+            if (d->cb.onShuffle) d->cb.onShuffle();
+            break;
+        case Element::CycleSegment: {
+            int i = std::min(hit.index, kCycleCount - 1);
+            d->cfg.cycleMinutes = kCycleValues[i];
+            if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+            break;
+        }
         case Element::Close:
             Hide();
             if (d->cb.onClose) d->cb.onClose();
@@ -526,18 +670,33 @@ void Panel::OnClick(const Hit& hit, int px) {
 
 void Panel::OnDrag(int px) {
     Impl* d = m_impl;
-    if (d->dragging != Element::Slider) return;
-    int idx = Clamp(d->dragIndex, 0, kParamSliderCount - 1);
-    const RECT& r = d->sliderRects[idx];
-    float span = (float)std::max(1L, r.right - r.left);
-    float t = Clamp01((float)(px - r.left) / span);
-    d->cfg.sceneParam[idx] = t;
-    if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+    if (d->dragging == Element::Slider) {
+        int idx = Clamp(d->dragIndex, 0, kParamSliderCount - 1);
+        const RECT& r = d->sliderRects[idx];
+        float span = (float)std::max(1L, r.right - r.left);
+        float t = Clamp01((float)(px - r.left) / span);
+        d->cfg.sceneParam[idx] = t;
+        if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+        return;
+    }
+    if (d->dragging == Element::ColorSlider) {
+        const RECT& r = (d->dragIndex == 0) ? d->colorHueRect : d->colorSatRect;
+        float span = (float)std::max(1L, r.right - r.left);
+        float t = Clamp01((float)(px - r.left) / span);
+        if (d->dragIndex == 0) d->colorHue = t; else d->colorSat = t;
+        Color c = Color::Hsv(d->colorHue, d->colorSat, 0.85f);
+        d->cfg.customColor = ((unsigned)(c.r * 255.0f) << 16)
+                           | ((unsigned)(c.g * 255.0f) << 8)
+                           | (unsigned)(c.b * 255.0f);
+        d->cfg.useCustomColor = true;
+        if (d->cb.onConfig) d->cb.onConfig(d->cfg);
+    }
 }
 
 void Panel::EndDrag() {
     Impl* d = m_impl;
     d->dragging = Element::None;
+    d->dragging2 = Element::None;
     d->dragIndex = -1;
 }
 
@@ -707,22 +866,6 @@ void Panel::Render() {
     auto heading = [&](const wchar_t* text, float y) {
         d->DrawString(dc, fmtSmall, text, kPad, y, 300, 16, kTextDim);
     };
-
-    // per-scene parameters
-    heading(L"SCENE SETTINGS", d->heading1Y);
-    for (int i = 0; i < kParamSliderCount; ++i) {
-        const RECT& r = d->sliderRects[i];
-        float t = Clamp01(d->cfg.sceneParam[i]);
-        float sx0 = (float)r.left, sx1 = (float)r.right;
-        float sy = (float)r.top + 7.0f;
-        d->DrawString(dc, fmtBody, d->paramNames[i], kPad, (float)r.top - 4, 104, 20, kText);
-        draw::RoundedRect(dc, brush, sx0, sy, sx1 - sx0, 4, 2.0f, kTrack);
-        draw::RoundedRect(dc, brush, sx0, sy, (sx1 - sx0) * t, 4, 2.0f, kAccent);
-        draw::Circle(dc, brush, sx0 + (sx1 - sx0) * t, sy + 2, 6.0f, Color(1, 1, 1, 0.95f));
-    }
-
-    // performance
-    heading(L"PERFORMANCE", d->heading2Y);
     auto segmentRow = [&](const wchar_t* label, const wchar_t* const* labels, const int* values,
                           int count, int current, const RECT* rects, Element kind) {
         float yy = (float)rects[0].top - 2.0f;
@@ -740,6 +883,139 @@ void Panel::Render() {
                           on ? kText : kTextDim, DWRITE_TEXT_ALIGNMENT_CENTER);
         }
     };
+
+    // per-scene parameters
+    heading(L"SCENE SETTINGS", d->heading1Y);
+    for (int i = 0; i < kParamSliderCount; ++i) {
+        const RECT& r = d->sliderRects[i];
+        float t = Clamp01(d->cfg.sceneParam[i]);
+        float sx0 = (float)r.left, sx1 = (float)r.right;
+        float sy = (float)r.top + 7.0f;
+        d->DrawString(dc, fmtBody, d->paramNames[i], kPad, (float)r.top - 4, 104, 20, kText);
+        draw::RoundedRect(dc, brush, sx0, sy, sx1 - sx0, 4, 2.0f, kTrack);
+        draw::RoundedRect(dc, brush, sx0, sy, (sx1 - sx0) * t, 4, 2.0f, kAccent);
+        draw::Circle(dc, brush, sx0 + (sx1 - sx0) * t, sy + 2, 6.0f, Color(1, 1, 1, 0.95f));
+    }
+
+    // --- color section -------------------------------------------------------
+    if (d->colorSupported) {
+        heading(L"COLOR", d->colorHeadingY);
+        {
+            float ty = (float)d->colorToggleRect.top + 2.0f;
+            bool on = d->cfg.useCustomColor;
+            bool hot = (d->hoverKind == Element::ColorToggle);
+            d->DrawString(dc, fmtBody, L"Custom color", kPad, ty, w - kPad * 2 - 56, 20,
+                          hot ? kText : Color(kText.r, kText.g, kText.b, 0.92f));
+            draw::RoundedRect(dc, brush, w - kPad - 42, ty, 38, 20, 10,
+                              on ? Color(kAccent.r, kAccent.g, kAccent.b, 0.85f) : kTrack);
+            draw::Circle(dc, brush, w - kPad - 42 + (on ? 28.0f : 10.0f), ty + 10, 7.5f,
+                         Color(1, 1, 1, 0.95f));
+        }
+        {
+            const RECT& r = d->colorHueRect;
+            float sx0 = (float)r.left, sx1 = (float)r.right;
+            float sy = (float)(r.top + r.bottom) * 0.5f;
+            d->DrawString(dc, fmtBody, L"Hue", kPad, (float)r.top - 4, 104, 20, kText);
+            D2D1_GRADIENT_STOP hs[7];
+            for (int i = 0; i < 7; ++i) {
+                Color hc = Color::Hsv((float)i / 6.0f, 0.85f, 0.90f);
+                hs[i].position = (float)i / 6.0f;
+                hs[i].color = D2D1::ColorF(hc.r, hc.g, hc.b, 1.0f);
+            }
+            ID2D1GradientStopCollection* coll = nullptr;
+            if (SUCCEEDED(dc->CreateGradientStopCollection(hs, 7, &coll)) && coll) {
+                ID2D1LinearGradientBrush* gb = nullptr;
+                D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp{};
+                gp.startPoint = D2D1::Point2F(sx0, sy);
+                gp.endPoint = D2D1::Point2F(sx1, sy);
+                if (SUCCEEDED(dc->CreateLinearGradientBrush(gp, coll, &gb)) && gb) {
+                    dc->FillRoundedRectangle(
+                        D2D1::RoundedRect(D2D1::RectF(sx0, sy - 3.0f, sx1, sy + 3.0f), 3, 3), gb);
+                    gb->Release();
+                }
+                coll->Release();
+            }
+            draw::Circle(dc, brush, sx0 + (sx1 - sx0) * Clamp01(d->colorHue), sy, 6.5f,
+                         Color(1, 1, 1, 0.95f));
+        }
+        {
+            const RECT& r = d->colorSatRect;
+            float sx0 = (float)r.left, sx1 = (float)r.right;
+            float sy = (float)(r.top + r.bottom) * 0.5f;
+            d->DrawString(dc, fmtBody, L"Saturation", kPad, (float)r.top - 4, 104, 20, kText);
+            Color lo = Color::Hsv(d->colorHue, 0.0f, 0.60f);
+            Color hi = Color::Hsv(d->colorHue, 1.0f, 0.85f);
+            D2D1_GRADIENT_STOP ss[2];
+            ss[0].position = 0.0f; ss[0].color = D2D1::ColorF(lo.r, lo.g, lo.b, 1.0f);
+            ss[1].position = 1.0f; ss[1].color = D2D1::ColorF(hi.r, hi.g, hi.b, 1.0f);
+            ID2D1GradientStopCollection* coll = nullptr;
+            if (SUCCEEDED(dc->CreateGradientStopCollection(ss, 2, &coll)) && coll) {
+                ID2D1LinearGradientBrush* gb = nullptr;
+                D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp{};
+                gp.startPoint = D2D1::Point2F(sx0, sy);
+                gp.endPoint = D2D1::Point2F(sx1, sy);
+                if (SUCCEEDED(dc->CreateLinearGradientBrush(gp, coll, &gb)) && gb) {
+                    dc->FillRoundedRectangle(
+                        D2D1::RoundedRect(D2D1::RectF(sx0, sy - 3.0f, sx1, sy + 3.0f), 3, 3), gb);
+                    gb->Release();
+                }
+                coll->Release();
+            }
+            draw::Circle(dc, brush, sx0 + (sx1 - sx0) * Clamp01(d->colorSat), sy, 6.5f,
+                         Color(1, 1, 1, 0.95f));
+        }
+        for (int i = 0; i < kPresetCount; ++i) {
+            const RECT& r = d->presetRects[i];
+            float cx = ((float)r.left + r.right) * 0.5f;
+            float cy = ((float)r.top + r.bottom) * 0.5f;
+            Color pc = Color::Hex(kColorPresets[i]);
+            bool active = d->cfg.useCustomColor && d->cfg.customColor == kColorPresets[i];
+            bool hot = (d->hoverKind == Element::ColorPreset && d->hoverIndex == i);
+            draw::Circle(dc, brush, cx, cy, 12.0f, pc.WithAlpha(hot || active ? 1.0f : 0.8f));
+            if (active) {
+                brush->SetColor(D2D1::ColorF(1, 1, 1, 0.9f));
+                dc->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), 14.0f, 14.0f), brush, 1.6f, nullptr);
+            }
+        }
+        {
+            const RECT& r = d->randomRect;
+            bool hot = (d->hoverKind == Element::ColorRandom);
+            draw::RoundedRect(dc, brush, (float)r.left, (float)r.top,
+                              (float)(r.right - r.left), 26.0f, 13.0f,
+                              hot ? Color(0x24, 0x2c, 0x42) : kCard);
+            float rcx = ((float)r.left + r.right) * 0.5f - 16.0f;
+            float rcy = ((float)r.top + r.bottom) * 0.5f;
+            draw::RoundedRect(dc, brush, rcx - 8, rcy - 8, 16, 16, 4, Color(1, 1, 1, 0.10f));
+            draw::Circle(dc, brush, rcx - 3.5f, rcy - 3.5f, 1.4f, kText);
+            draw::Circle(dc, brush, rcx + 3.5f, rcy + 3.5f, 1.4f, kText);
+            d->DrawString(dc, fmtSmall, L"Random", rcx + 12.0f, rcy - 7.0f, 44, 14,
+                          kTextDim, DWRITE_TEXT_ALIGNMENT_LEADING);
+        }
+    }
+
+    // --- seed row ------------------------------------------------------------
+    {
+        float ty = d->seedY;
+        wchar_t seedText[32];
+        swprintf_s(seedText, L"%u", (unsigned)d->cfg.variation);
+        d->DrawString(dc, fmtSmall, L"SEED", kPad, ty + 6.0f, 90, 16, kTextDim);
+        d->DrawString(dc, fmtBody, seedText, kPad + 52, ty + 3.0f, 160, 20, kText);
+        bool hot = (d->hoverKind == Element::ShuffleButton);
+        draw::RoundedRect(dc, brush, (float)d->shuffleRect.left, (float)d->shuffleRect.top,
+                          (float)(d->shuffleRect.right - d->shuffleRect.left), 26.0f, 13.0f,
+                          hot ? Color(0x24, 0x2c, 0x42) : kCard);
+        d->DrawString(dc, fmtScene, L"Shuffle",
+                      (float)d->shuffleRect.left, (float)d->shuffleRect.top + 4.0f,
+                      (float)(d->shuffleRect.right - d->shuffleRect.left), 20,
+                      hot ? kText : kTextDim, DWRITE_TEXT_ALIGNMENT_CENTER);
+    }
+
+    // performance
+    heading(L"AUTO-CYCLE", d->cycleHeadingY);
+    segmentRow(L"Switch", kCycleLabels, kCycleValues, kCycleCount, d->cfg.cycleMinutes,
+               d->cycleRects, Element::CycleSegment);
+
+    heading(L"PERFORMANCE", d->heading2Y);
     segmentRow(L"Frame rate", kFpsLabels, kFpsValues, kFpsCount, d->cfg.targetFps,
                d->fpsRects, Element::FpsSegment);
     segmentRow(L"Quality", kQualityLabels, kQualityValues, kQualityCount, (int)d->cfg.quality,

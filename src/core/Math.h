@@ -112,6 +112,19 @@ struct Color {
     Color Mix(const Color& o, float t) const {
         return { Lerp(r, o.r, t), Lerp(g, o.g, t), Lerp(b, o.b, t), Lerp(a, o.a, t) };
     }
+    // Converts the RGB triple to HSV; alpha is ignored. Pairs with Hsv() for
+    // round-tripping (Hsv(h, s, v) reproduces r,g,b for a=1 colors).
+    void ToHsv(float& h, float& s, float& v) const {
+        float mx = std::max(r, std::max(g, b));
+        float mn = std::min(r, std::min(g, b));
+        float d = mx - mn;
+        v = mx;
+        s = mx > 0.0f ? d / mx : 0.0f;
+        if (d <= 0.0f) { h = 0.0f; return; }
+        if (mx == r) h = Fract((g - b) / d / 6.0f);
+        else if (mx == g) h = Fract((b - r) / d / 6.0f + 1.0f / 3.0f);
+        else h = Fract((r - g) / d / 6.0f + 2.0f / 3.0f);
+    }
 };
 
 } // namespace lp

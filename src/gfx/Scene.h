@@ -41,6 +41,11 @@ struct SceneCtx {
     // Scene variation seed. Folded into every Rng seed so `--reshuffle` produces a
     // new-but-still-deterministic layout; 0 is the canonical layout used by tests.
     uint32_t variation = 0;
+
+    // The global custom color (config `customColor`, 0xRRGGBB). Scenes that opt in
+    // derive their palette from it when useCustomColor is set.
+    Color customColor;
+    bool useCustomColor = false;
 };
 
 class Scene {
@@ -62,7 +67,25 @@ public:
     // control panel can render meaningful sliders.
     virtual const wchar_t* ParamName(int index) const { (void)index; return L""; }
     virtual int ParamCount() const { return 0; }
+
+    // True when the scene builds its colors from ctx.customColor / MakePalette,
+    // which makes the panel's COLOR section worth showing.
+    virtual bool SupportsCustomColor() const { return false; }
 };
+
+// Five harmonious colors derived from the scene context: the custom color when
+// it is enabled, otherwise a deterministic palette from the variation seed.
+// Scenes index into it for their own looks and set alphas themselves.
+struct Palette {
+    enum { kColors = 5 };
+    Color c[kColors];
+};
+Palette MakePalette(const SceneCtx& ctx);
+
+// The palette's base hue: from the custom color when enabled, otherwise the
+// caller's own (parameter-driven) hue. Lets existing hue-based scenes honor
+// the custom color with a one-line change.
+float PaletteHue(const SceneCtx& ctx, float fallbackHue);
 
 // Creates the scene for `id`. Never returns null.
 Scene* CreateScene(SceneId id);

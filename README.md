@@ -44,7 +44,7 @@ engine sees and which condition is holding it back:
 
 ## Wallpapers
 
-Thirty procedural scenes are included. They are drawn with gradients, geometry and
+Thirty-six procedural scenes are included. They are drawn with gradients, geometry and
 layered noise — there are no textures, videos or downloaded assets.
 
 | Scene | Key | What it is |
@@ -79,6 +79,16 @@ layered noise — there are no textures, videos or downloaded assets.
 | **Kaleidoscope** | `kaleido` | A turning mandala of mirrored, drifting shapes |
 | **Flow Field** | `flow` | Currents of light advected through an evolving vector field |
 | **Plasma Ball** | `plasma` | Electric filaments dancing inside a glass orb |
+| **Bloom** | `bloom` | Soft generative color blooms drifting in the dark |
+| **Strata** | `strata` | Layered waves of generative color, rolling over each other |
+| **Shards** | `shards` | Faceted generative glass shimmering in slow rotation |
+| **Halos** | `halos` | Concentric rings and rotating arcs around a quiet glow |
+| **Hive** | `hive` | A hex-cell mosaic rippling with waves of color |
+| **Weave** | `weave` | Ribbon braids crossing in slow weaving waves |
+
+The last nine scenes (Weave, Hive, Halos, Shards, Strata, Bloom, Flow Mesh, Satin
+Flow and Flow Field) are fully generative: their entire palette comes from the
+**seed** or from your **custom color** - see *Make it yours* below.
 
 ### Lines & Connections
 
@@ -97,6 +107,23 @@ So the provider tries, in order:
 3. a grid derived from the shell's own icon-cell metrics.
 
 `--status` reports which source is in use.
+
+---
+
+## Make it yours
+
+Generative scenes are built around two controls:
+
+* **Seed** - every scene folds the seed into its layout *and* its palette, so each
+  value is a different wallpaper. Change it from the tray menu (*Shuffle this
+  wallpaper*), the panel's **Shuffle** button, or `LivePaper --reshuffle`.
+* **Custom color** - scenes that support it derive their whole palette from one
+  color. Pick it in the panel's **COLOR** section (hue + saturation sliders, ten
+  presets, a random button), or leave the toggle off to let the seed choose.
+
+An **AUTO-CYCLE** section also lets the engine advance to the next wallpaper every
+15 / 30 / 60 minutes (off by default), and `LivePaper --cycle <min|off>` sets it
+from the command line.
 
 ---
 
@@ -181,7 +208,7 @@ src/
     App.*                 engine loop, CLI, diagnostics, autostart
     WallpaperHost.*       Progman/WorkerW discovery and desktop child window
     IconAnchors.*         desktop icon positions with cache and grid fallback
-  scenes/                 the thirty wallpapers
+  scenes/                 the thirty-six wallpapers
   ui/
     Panel.*               control panel (single Direct2D surface, scrollable)
     Tray.*                notification-area icon, generated at runtime
@@ -323,7 +350,7 @@ Working and verified live:
   `--status` (`covers host exactly: yes`) **and** by `--diag`, which samples the far
   corners of the rendered frame so coverage is proven by content, not geometry
 * one process, one tray icon — a second launch opens the panel instead of duplicating
-* all thirty scenes pass `--selftest` and stay inside the frame budget
+* all thirty-six scenes pass `--selftest` and stay inside the frame budget
 * icon positions are read from the shell and the graph follows them
 * scene switching, shuffle (`--reshuffle`), pause/resume, tray menu, hotkeys and the
   control panel with per-scene parameter sliders

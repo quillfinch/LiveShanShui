@@ -33,6 +33,7 @@ public:
     const wchar_t* Description() const override {
         return L"Currents of light advected through an evolving vector field.";
     }
+    bool SupportsCustomColor() const override { return true; }
     int ParamCount() const override { return 4; }
     const wchar_t* ParamName(int i) const override {
         switch (i) {
@@ -89,7 +90,7 @@ public:
         ID2D1DeviceContext* dc = ctx.dc;
         ID2D1SolidColorBrush* brush = ctx.white;
         const float w = ctx.width, h = ctx.height;
-        float baseHue = Fract(0.45f + (m_hue - 0.5f) * 0.7f);
+        float baseHue = Fract(PaletteHue(ctx, 0.45f + (m_hue - 0.5f) * 0.7f));
 
         D2D1_GRADIENT_STOP bg[2];
         Color tint = Color::Hsv(baseHue, 0.5f, 0.030f);

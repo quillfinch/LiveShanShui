@@ -37,11 +37,47 @@ Scene* CreateScene(SceneId id) {
         case SceneId::Kaleido: return scenes::CreateKaleido();
         case SceneId::Flow: return scenes::CreateFlow();
         case SceneId::Plasma: return scenes::CreatePlasma();
+        case SceneId::Bloom: return scenes::CreateBloom();
+        case SceneId::Strata: return scenes::CreateStrata();
+        case SceneId::Shards: return scenes::CreateShards();
+        case SceneId::Halos: return scenes::CreateHalos();
+        case SceneId::Hive: return scenes::CreateHive();
+        case SceneId::Weave: return scenes::CreateWeave();
         default:                 return scenes::CreateLines();
     }
 }
 
 void DestroyScene(Scene* scene) { delete scene; }
+
+Palette MakePalette(const SceneCtx& ctx) {
+    Palette p;
+    float h, sat;
+    if (ctx.useCustomColor) {
+        // Derive the palette family from the user's color. Keep a floor on
+        // saturation so near-white/near-black picks still produce a lively set.
+        float val = 0;
+        ctx.customColor.ToHsv(h, sat, val);
+        sat = Clamp(sat, 0.30f, 1.0f) * 0.9f + 0.10f;
+    } else {
+        // Seed-driven: deterministic per variation, re-rolled by --reshuffle.
+        Rng rng(ctx.variation * 2654435761u + 97u);
+        h = rng.Unit();
+        sat = rng.Range(0.55f, 0.85f);
+    }
+    p.c[0] = Color::Hsv(h, sat, 1.0f);                                  // base
+    p.c[1] = Color::Hsv(Fract(h + 0.083f), sat * 0.92f, 1.0f);          // +30 deg
+    p.c[2] = Color::Hsv(Fract(h - 0.069f), sat * 0.96f, 1.0f);          // -25 deg
+    p.c[3] = Color::Hsv(Fract(h + 0.500f), sat * 0.80f, 1.0f);          // complement
+    p.c[4] = Color::Hsv(Fract(h + 0.390f), sat * 0.88f, 1.0f);          // accent
+    return p;
+}
+
+float PaletteHue(const SceneCtx& ctx, float fallbackHue) {
+    if (!ctx.useCustomColor) return fallbackHue;
+    float h = 0, s = 0, v = 0;
+    ctx.customColor.ToHsv(h, s, v);
+    return h;
+}
 
 namespace draw {
 
