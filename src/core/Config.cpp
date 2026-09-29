@@ -181,6 +181,9 @@ bool Config::Save() const {
     fwprintf(f, L"quality=%d\n", (int)quality);
     fwprintf(f, L"dim=%.3f\n", dim);
     fwprintf(f, L"variation=%u\n", variation);
+    fwprintf(f, L"useCustomColor=%d\n", useCustomColor ? 1 : 0);
+    fwprintf(f, L"customColor=%06X\n", customColor);
+    fwprintf(f, L"cycleMinutes=%d\n", cycleMinutes);
     fwprintf(f, L"pauseFullscreen=%d\n", pauseWhenFullscreen ? 1 : 0);
     fwprintf(f, L"pauseBattery=%d\n", pauseOnBattery ? 1 : 0);
     fwprintf(f, L"pauseLocked=%d\n", pauseWhenLocked ? 1 : 0);
