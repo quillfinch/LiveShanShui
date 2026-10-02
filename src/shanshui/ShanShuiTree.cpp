@@ -286,7 +286,9 @@ void tree03(Sink& s, float x, float y, const TreeOpts& o) {
     }
     std::vector<Vec2> lc = line1;
     for (int i = (int)line2.size() - 1; i >= 0; --i) lc.push_back(line2[i]);
-    for (auto& v : lc) { v.x += x; v.y += y; }
+    // line1/line2 are already in world space (nx/ny include x/y); the original
+    // emits them as-is. Adding the anchor here as well would paint every trunk
+    // mask at twice its tree's position.
     s.Poly(lc, true, P().paper, true, col, 1.5f, true);
     for (auto& sh : blobs.shapes) s.Add(std::move(sh));
 }

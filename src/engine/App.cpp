@@ -33,7 +33,7 @@ namespace {
 constexpr UINT_PTR kFrameTimer = 1;
 constexpr UINT kPollIntervalMs = 400;       // power/session/desktop watch
 constexpr UINT_PTR kWatchTimer = 2;
-constexpr int  kHotkeyTogglePanel = 1;
+constexpr int  kHotkeyTogglePause = 1;
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr wchar_t kRunValue[] = L"LiveShanShui";
 
@@ -45,7 +45,7 @@ struct Options {
     enum class Mode { Engine, Help, Version, Selftest, Capture, Status,
                       Pause, Resume, Toggle, Quit, Reload,
                       Install, Uninstall, SetFps, SetQuality, Render, Diag, Screencap,
-                      Reshuffle, SetPet };
+                      Reshuffle, SetSeed, SetPet };
     Mode mode = Mode::Engine;
     int fps = -1;
     Quality quality = Quality::Balanced;
@@ -53,6 +53,7 @@ struct Options {
     bool noPanel = false;
     std::wstring petKeyArg;
     std::wstring capturePath;
+    unsigned seedValue = 0;
     bool badArg = false;
     std::wstring badArgText;
 
@@ -102,6 +103,7 @@ void PrintHelp() {
 USAGE
   LiveShanShui                       Start the engine (tray icon appears)
   LiveShanShui --reshuffle           Paint a new landscape (re-roll the world seed)
+  LiveShanShui --seed <n>            Paint the landscape for a specific seed
   LiveShanShui --pause | --resume    Pause / resume animation
   LiveShanShui --toggle              Toggle pause           (global hotkey: Ctrl+Alt+P)
   LiveShanShui --fps <n|max>         Set the frame-rate cap
@@ -155,6 +157,12 @@ bool ParseArgs(int argc, wchar_t** argv, Options& opt) {
         }
         else if (a == L"--status") opt.mode = Options::Mode::Status;
         else if (a == L"--reshuffle" || a == L"--shuffle") opt.mode = Options::Mode::Reshuffle;
+        else if (a == L"--seed") {
+            const wchar_t* v = need(L"--seed");
+            if (!v) return false;
+            opt.seedValue = (unsigned)wcstoul(v, nullptr, 0);   // decimal or 0x hex
+            opt.mode = Options::Mode::SetSeed;
+        }
         else if (a == L"--pet") {
             const wchar_t* v = need(L"--pet");
             if (!v) return false;
@@ -355,6 +363,10 @@ LRESULT CALLBACK Engine::EngineProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 e->m_userPaused = !e->m_userPaused;
                 e->UpdateTray();
                 break;
+            case ipc::Command::SetPause:
+                e->m_userPaused = (wp != 0);
+                e->UpdateTray();
+                break;
             case ipc::Command::Reshuffle: e->Reshuffle(); break;
             case ipc::Command::TogglePet:
                 if (e->m_pet) {
@@ -485,8 +497,8 @@ bool Engine::Startup(const Options& opt) {
         }
     });
     m_tray.SetTooltip(L"Live Shan Shui");
-    // Ctrl+Alt+P toggles pause, Ctrl+Alt+N advances the wallpaper.
-    RegisterHotKey(m_window, kHotkeyTogglePanel, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'P');
+    // Ctrl+Alt+P toggles pause, as --help and the tray menu advertise.
+    RegisterHotKey(m_window, kHotkeyTogglePause, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'P');
 
     // --- control panel (lazy: only when first shown) ------------------------
     m_panel.reset(new Panel());
@@ -499,6 +511,10 @@ bool Engine::Startup(const Options& opt) {
         ApplyConfig(true);
     };
     cb.onShuffle = [this] { Reshuffle(); };
+    cb.onPauseToggle = [this] {
+        m_userPaused = !m_userPaused;
+        UpdateTray();
+    };
     cb.onClose = [] {};
     if (!m_panel->Create(inst, cb)) {
         LP_LOGW(L"engine: control panel unavailable");
@@ -525,7 +541,7 @@ void Engine::Shutdown() {
     if (m_window) {
         KillTimer(m_window, kFrameTimer);
         KillTimer(m_window, kWatchTimer);
-        UnregisterHotKey(m_window, kHotkeyTogglePanel);
+        UnregisterHotKey(m_window, kHotkeyTogglePause);
     }
     if (m_panel) m_panel->Destroy();
     if (m_pet) m_pet->Destroy();
@@ -944,11 +960,9 @@ int Engine::Run(const Options& opt) {
         BOOL got = GetMessageW(&msg, nullptr, 0, 0);
         if (got == 0 || got == -1) break;
         if (msg.message == WM_HOTKEY) {
-            if (msg.wParam == kHotkeyTogglePanel) {
-                if (m_panel) {
-                    if (m_panel->IsVisible()) m_panel->Hide();
-                    else m_panel->Show();
-                }
+            if (msg.wParam == kHotkeyTogglePause) {
+                m_userPaused = !m_userPaused;
+                UpdateTray();
             }
             continue;
         }
@@ -1551,7 +1565,7 @@ int App::Run(const wchar_t* cmdLine) {
             result = 0;
             break;
         case Options::Mode::Version:
-            Print(L"Live Shan Shui 2.0.0 (native Direct2D engine)");
+            Print(L"Live Shan Shui 2.1.0 (native Direct2D engine)");
             result = 0;
             break;
         case Options::Mode::Selftest:
@@ -1572,14 +1586,27 @@ int App::Run(const wchar_t* cmdLine) {
         case Options::Mode::Reshuffle:
             result = ipc::Send(ipc::Command::Reshuffle) ? 0 : (int)ExitCode::NotRunning;
             break;
+        case Options::Mode::SetSeed: {
+            // Like --reshuffle but deterministic: the same seed always paints the
+            // same landscape, which makes screenshots and bug reports reproducible.
+            Config c = Config::Load();
+            c.variation = opt.seedValue;
+            c.Normalize();
+            c.Save();
+            Print(L"World seed set to %u.", c.variation);
+            if (ipc::FindEngine()) ipc::Send(ipc::Command::ApplyConfig);
+            result = 0;
+            break;
+        }
         case Options::Mode::Toggle:
             result = ipc::Send(ipc::Command::TogglePause) ? 0 : (int)ExitCode::NotRunning;
             break;
         case Options::Mode::Pause:
-            result = ipc::Send(ipc::Command::TogglePause) ? 0 : (int)ExitCode::NotRunning;
+            // Explicit set, not a toggle: --pause twice must stay paused.
+            result = ipc::Send(ipc::Command::SetPause, 1) ? 0 : (int)ExitCode::NotRunning;
             break;
         case Options::Mode::Resume:
-            result = ipc::Send(ipc::Command::TogglePause) ? 0 : (int)ExitCode::NotRunning;
+            result = ipc::Send(ipc::Command::SetPause, 0) ? 0 : (int)ExitCode::NotRunning;
             break;
         case Options::Mode::Reload:
             result = ipc::Send(ipc::Command::Reload) ? 0 : (int)ExitCode::NotRunning;

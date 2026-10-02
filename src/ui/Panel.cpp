@@ -117,6 +117,7 @@ struct Panel::Impl {
 
     std::vector<Hit> hits;
     RECT closeRect{};
+    RECT pauseRect{};
     RECT sliderRects[kParamSliderCount]{};
     RECT fpsRects[kFpsCount]{};
     RECT qualityRects[kQualityCount]{};
@@ -475,7 +476,7 @@ void Panel::RebuildLayout() {
         d->hits.push_back(h);
     }
 
-    // --- close (fixed chrome, not part of the scrolled content) -------------
+    // --- close + pause (fixed chrome, not part of the scrolled content) ------
     d->closeRect.left = (LONG)(kWidth - kPad - 26);
     d->closeRect.top = 20;
     d->closeRect.right = d->closeRect.left + 26;
@@ -485,6 +486,16 @@ void Panel::RebuildLayout() {
         h.kind = Element::Close;
         h.index = 0;
         h.rect = d->closeRect;
+        d->hits.push_back(h);
+    }
+    d->pauseRect = d->closeRect;
+    d->pauseRect.left -= 34;
+    d->pauseRect.right -= 34;
+    {
+        Hit h;
+        h.kind = Element::PauseButton;
+        h.index = 0;
+        h.rect = d->pauseRect;
         d->hits.push_back(h);
     }
 
@@ -512,12 +523,19 @@ void Panel::RebuildLayout() {
 
 Panel::Hit Panel::HitTest(int px, int py) const {
     Impl* d = m_impl;
-    // The close button lives in the fixed header; everything else scrolls.
+    // The close and pause buttons live in the fixed header; everything else scrolls.
     if (Contains(d->closeRect, px, py)) {
         Hit h;
         h.kind = Element::Close;
         h.index = 0;
         h.rect = d->closeRect;
+        return h;
+    }
+    if (Contains(d->pauseRect, px, py)) {
+        Hit h;
+        h.kind = Element::PauseButton;
+        h.index = 0;
+        h.rect = d->pauseRect;
         return h;
     }
     int cy = py + (int)d->scroll;
@@ -591,6 +609,9 @@ void Panel::OnClick(const Hit& hit, int px) {
         }
         case Element::ShuffleButton:
             if (d->cb.onShuffle) d->cb.onShuffle();
+            break;
+        case Element::PauseButton:
+            if (d->cb.onPauseToggle) d->cb.onPauseToggle();
             break;
         case Element::PetButton: {
             int i = std::min(hit.index, kPetKindCount - 1);
@@ -756,6 +777,43 @@ void Panel::Render() {
                           Color(1, 1, 1, hot ? 0.14f : 0.06f));
         draw::Line(dc, brush, cx - 5, cy - 5, cx + 5, cy + 5, 1.6f, kTextDim);
         draw::Line(dc, brush, cx + 5, cy - 5, cx - 5, cy + 5, 1.6f, kTextDim);
+    }
+
+    // Pause / play, next to the close button. Shows the action, not the state:
+    // bars while live (click to freeze), a triangle while paused (click to go).
+    {
+        bool hot = (d->hoverKind == Element::PauseButton);
+        float bx = (float)d->pauseRect.left, by = (float)d->pauseRect.top;
+        draw::RoundedRect(dc, brush, bx, by, 26, 26, 13,
+                          Color(1, 1, 1, hot ? 0.14f : 0.06f));
+        float cx = bx + 13.0f, cy = by + 13.0f;
+        Color icon(kText.r, kText.g, kText.b, 0.95f);
+        if (d->paused) {
+            ID2D1Factory* factory = nullptr;
+            dc->GetFactory(&factory);
+            if (factory) {
+                ID2D1PathGeometry* geo = nullptr;
+                if (SUCCEEDED(factory->CreatePathGeometry(&geo)) && geo) {
+                    ID2D1GeometrySink* sink = nullptr;
+                    if (SUCCEEDED(geo->Open(&sink)) && sink) {
+                        sink->BeginFigure(D2D1::Point2F(cx - 4.0f, cy - 6.0f),
+                                          D2D1_FIGURE_BEGIN_FILLED);
+                        sink->AddLine(D2D1::Point2F(cx - 4.0f, cy + 6.0f));
+                        sink->AddLine(D2D1::Point2F(cx + 6.0f, cy));
+                        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                        sink->Close();
+                        sink->Release();
+                        brush->SetColor(D2D1::ColorF(icon.r, icon.g, icon.b, icon.a));
+                        dc->FillGeometry(geo, brush);
+                    }
+                    geo->Release();
+                }
+                factory->Release();
+            }
+        } else {
+            draw::RoundedRect(dc, brush, cx - 5.5f, cy - 6.0f, 3.6f, 12.0f, 1.6f, icon);
+            draw::RoundedRect(dc, brush, cx + 1.9f, cy - 6.0f, 3.6f, 12.0f, 1.6f, icon);
+        }
     }
 
     // --- scrolled content -------------------------------------------------------

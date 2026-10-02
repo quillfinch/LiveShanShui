@@ -60,7 +60,14 @@ void Foot(Sink& s, const std::vector<std::vector<Vec2>>& ptlist, float xof, floa
             ftlist[ftlist.size() - 1].push_back(Vec2(x2, y2));
         }
     }
-    for (const auto& f : ftlist) PaperPoly(s, f);
+    for (const auto& f : ftlist) {
+        // The original emits these through poly(..., {xof, yof}), which offsets
+        // every point; the mask has to land on the mountain's base with it.
+        std::vector<Vec2> mask;
+        mask.reserve(f.size());
+        for (const auto& v : f) mask.push_back(Vec2(v.x + xof, v.y + yoff));
+        PaperPoly(s, std::move(mask));
+    }
     for (const auto& f : ftlist) {
         std::vector<Vec2> shifted;
         shifted.reserve(f.size());
@@ -352,7 +359,12 @@ void flatMount(Sink& s, float xoff, float yoff, float seed, const MountOpts& o) 
         float v = (1.0f - std::fabs(std::fmod((float)i, d) - d * 0.5f) / (d * 0.5f)) * 0.12f;
         grlist[i].x *= 1 - v + Noise(grlist[i].y * 0.5f) * v;
     }
-    PaperPoly(s, grlist);
+    // The original offsets the grove mask by (xoff, yoff) at draw time; grlist
+    // is local, so shift it here or the mask lands at the world origin.
+    std::vector<Vec2> grove;
+    grove.reserve(grlist.size());
+    for (const auto& v : grlist) grove.push_back(Vec2(v.x + xoff, v.y + yoff));
+    PaperPoly(s, std::move(grove));
     {
         std::vector<Vec2> shifted;
         for (const auto& v : grlist) shifted.push_back(Vec2(v.x + xoff, v.y + yoff));
@@ -526,7 +538,14 @@ void rock(Sink& s, float xoff, float yoff, float seed, const MountOpts& o) {
     }
 
     {
-        std::vector<Vec2> bg = ptlist[0];
+        // The original draws the rock's paper mask as poly(ptlist[0] + [[0,0]],
+        // {xof, yof}) — the ring offset onto the rock with the rock's center as
+        // the closing point. The ring points are LOCAL, so they must be shifted
+        // here; appending the raw anchor to an unshifted ring paints a sliver
+        // from the world origin to the rock instead.
+        std::vector<Vec2> bg;
+        bg.reserve(ptlist[0].size() + 1);
+        for (const auto& v : ptlist[0]) bg.push_back(Vec2(v.x + xoff, v.y + yoff));
         bg.push_back(Vec2(xoff, yoff));
         PaperPoly(s, std::move(bg));
     }

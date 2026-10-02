@@ -233,6 +233,13 @@ std::vector<WorldItem> World::planChunk(float a, float b) {
 
     std::vector<WorldItem> out;
     int idx = 0;
+    // Every materialized item goes through the NaN scrub exactly once — including
+    // both halves of a "mount" plan (mountain + its water), which is why the
+    // scrub lives in this helper rather than on out.back().
+    auto emit = [&](WorldItem&& it) {
+        sanitize(it.sink);
+        out.push_back(std::move(it));
+    };
     for (const auto& pl : plan) {
         WorldItem item;
         item.tag = pl.tag;
@@ -240,35 +247,34 @@ std::vector<WorldItem> World::planChunk(float a, float b) {
         item.y = pl.y;
         if (pl.tag == "mount") {
             Mount::mountain(item.sink, pl.x, pl.y, (float)idx * 2.0f * R(), {});
-            out.push_back(item);
+            emit(std::move(item));
             WorldItem w;
             w.tag = "water";
             w.x = pl.x;
             w.y = pl.y - 10000.0f;
             water(w.sink, pl.x, pl.y, (float)idx * 2.0f);
-            out.push_back(std::move(w));
+            emit(std::move(w));
         } else if (pl.tag == "flatmount") {
             MountOpts o;
             o.wid = 600.0f + R() * 400.0f;
             o.hei = 100.0f;
             o.cho = 0.5f + R() * 0.2f;
             Mount::flatMount(item.sink, pl.x, pl.y, 2.0f * R() * kPiF, o);
-            out.push_back(std::move(item));
+            emit(std::move(item));
         } else if (pl.tag == "distmount") {
             Mount::distMount(item.sink, pl.x, pl.y, R() * 100.0f, 150.0f,
                              (RandChoice({500, 1000, 1500})), 5.0f);
-            out.push_back(std::move(item));
+            emit(std::move(item));
         } else if (pl.tag == "boat") {
             Arch::boat01(item.sink, pl.x, pl.y, R(), pl.y / 800.0f, RandChoice({true, false}));
-            out.push_back(std::move(item));
+            emit(std::move(item));
         } else if (pl.tag == "sun") {
             sun(item.sink, pl.x, pl.y, 55.0f + R() * 30.0f, paint_);
-            out.push_back(std::move(item));
+            emit(std::move(item));
         } else if (pl.tag == "birds") {
             birdFlock(item.sink, pl.x, pl.y, paint_);
-            out.push_back(std::move(item));
+            emit(std::move(item));
         }
-        sanitize(out.back().sink);
         ++idx;
     }
     return out;

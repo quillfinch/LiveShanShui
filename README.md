@@ -71,7 +71,10 @@ The panel's **SCENE SETTINGS** sliders (labels come from the painting itself):
 | Scroll speed | how fast the scroll drifts sideways |
 | Mist | the soft paper-colored washes across the mountains |
 | Vegetation | tree density on the mountains and plateaus |
-| Ink | overall ink strength |
+| Ink | how heavily the brush is loaded — strokes and dense texture darken toward true sumi, washes stay translucent |
+
+Every slider applies in place: the scroll keeps its position while the painting
+repaints itself over the next few frames.
 
 **COLOR** tints the paper and ink (a rose tint gives the warm pink wash shown in the
 screenshots; the classic look is the default off state), **Shuffle** re-rolls the world
@@ -91,6 +94,7 @@ levels. See `--pet list`. It hides itself behind fullscreen apps.
 ```
 LiveShanShui                       Start the engine (tray icon appears)
 LiveShanShui --reshuffle           Paint a new landscape (re-roll the world seed)
+LiveShanShui --seed <n>            Paint the landscape for a specific seed
 LiveShanShui --pause | --resume    Pause / resume animation
 LiveShanShui --toggle              Toggle pause           (global hotkey: Ctrl+Alt+P)
 LiveShanShui --fps <n|max>         Set the frame-rate cap
@@ -125,9 +129,9 @@ The point of the project is to be invisible in Task Manager. That is achieved by
   session is locked, a fullscreen app is in front, or other windows cover the desktop.
   Each is configurable.
 * **Baked tiles.** The painting is rendered into screen-sized tiles (paper + shapes)
-  once as the camera advances; a normal frame replays at most two bitmaps. A new tile
-  costs a few tens of milliseconds about once every half minute at the default scroll
-  speed, amortised between frames.
+  once as the camera advances; a normal frame replays at most two bitmaps. Tile baking
+  is amortised: each frame spends at most ~2.5 ms on the tile ahead of the view, so by
+  the time the scroll reaches it, it has long been finished — no periodic hitch.
 * **Adaptive quality.** If the measured frame cost exceeds the budget for a sustained
   period, the internal render scale is nudged down (and back up when there is room).
 
@@ -257,7 +261,7 @@ petKind=ghost          ; cat, shiba, axolotl, chick, ghost, panda
 p0=0.250               ; scroll speed (the shipped default is a slow drift)
 p1=0.500               ; mist
 p2=0.500               ; vegetation
-p3=0.500               ; ink
+p3=0.750               ; ink (the shipped default loads the brush like real sumi)
 ```
 
 Each pet species keeps its own stats block in `pet.ini` (hunger, happiness, xp, age),
@@ -275,14 +279,12 @@ Working and verified live:
 * tiles join seamlessly across chunk boundaries (the self-test walks the camera across
   a seam at full resolution and inspects the result)
 * deterministic: the same world seed paints byte-identical frames
-* reshuffle, pause/resume, tray menu, control panel with the four painting sliders,
-  color tinting, desktop pet, `dim`, battery/lock/fullscreen/covered pausing,
-  Explorer-restart re-attach, adaptive quality
+* reshuffle, `--seed`, pause/resume (tray, panel header button, hotkey, CLI), control
+  panel with the four painting sliders, color tinting, desktop pet, `dim`,
+  battery/lock/fullscreen/covered pausing, Explorer-restart re-attach, adaptive quality
 
 Known limitations:
 
-* baking a new tile takes a few tens of milliseconds about once every half minute at
-  the default scroll speed; a single frame hitches when it happens
 * the painting is memory-held per generated chunk and trimmed behind the camera; very
   long sessions at high scroll speed trade RAM for scenery
 * per-monitor paintings (`spanAll` renders one surface across the virtual desktop)

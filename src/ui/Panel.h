@@ -23,7 +23,8 @@ public:
     // Raised when the user changes something that needs to be applied to the engine.
     struct Callbacks {
         std::function<void(const Config&)> onConfig;
-        std::function<void()> onShuffle;   // re-roll the world seed
+        std::function<void()> onShuffle;      // re-roll the world seed
+        std::function<void()> onPauseToggle;  // pause/resume the scroll
         std::function<void()> onClose;
     };
 
@@ -58,7 +59,7 @@ public:
 
 private:
     enum class Element {
-        None, Slider, Toggle, Close, FpsSegment, QualitySegment,
+        None, Slider, Toggle, Close, PauseButton, FpsSegment, QualitySegment,
         ColorToggle, ColorSlider, ColorPreset, ColorRandom, ShuffleButton,
         PetButton
     };

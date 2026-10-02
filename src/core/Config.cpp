@@ -24,6 +24,7 @@ Config Config::Defaults() {
     c.targetFps = 30;
     c.quality = Quality::Balanced;
     c.sceneParam[0] = 0.25f;   // a slow, contemplative drift by default
+    c.sceneParam[3] = 0.75f;   // a loaded brush: strokes read as real ink
     return c;
 }
 

@@ -26,6 +26,7 @@ enum class Command : unsigned {
     Poll        = 13,   // presence probe; returns non-zero when the engine is alive
     DumpState   = 14,   // write a live state snapshot next to the config for --status
     TogglePet   = 15,   // show/hide the desktop pet
+    SetPause    = 16,   // wParam 1 = pause, 0 = resume (TogglePause flips instead)
 };
 
 constexpr wchar_t kWindowClass[] = L"LiveShanShui.Ipc";
