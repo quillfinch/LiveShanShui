@@ -1,0 +1,7 @@
+build/
+selftest-*.png
+render-*.png
+*.o
+_aotprobe/
+Thumbs.db
+.zcode/
